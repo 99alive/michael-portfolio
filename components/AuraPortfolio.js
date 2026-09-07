@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
 import * as THREE from "three";
@@ -426,9 +426,100 @@ export default function AuraPortfolio() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [routeStep, setRouteStep] = useState(0);
   const [systemMessage, setSystemMessage] = useState("All sectors open. Tap the route nodes to trace the build.");
+  const [hasEntered, setHasEntered] = useState(false);
+  const [musicLevel, setMusicLevel] = useState(0);
+  const audioRef = useRef(null);
+  const musicStartedRef = useRef(false);
+  const scrollPulseRef = useRef(null);
   const { scrollYProgress } = useScroll();
   const playerTop = useTransform(scrollYProgress, [0, 1], ["7.5rem", "calc(100vh - 8rem)"]);
   const playerRotate = useTransform(scrollYProgress, [0, 0.5, 1], [-8, 8, -4]);
+
+  const enterPortfolio = useCallback(() => {
+    const audio = audioRef.current;
+    setHasEntered(true);
+
+    if (!audio || musicStartedRef.current) return;
+
+    audio.muted = false;
+    audio.volume = 0.42;
+    audio.playbackRate = 1;
+    audio.play()
+      .then(() => {
+        musicStartedRef.current = true;
+        setMusicLevel(0.55);
+      })
+      .catch(() => setMusicLevel(0.2));
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return undefined;
+
+    const keepAlive = () => {
+      if (musicStartedRef.current && audio.paused && document.visibilityState === "visible") {
+        audio.play().catch(() => {});
+      }
+    };
+
+    audio.addEventListener("pause", keepAlive);
+    document.addEventListener("visibilitychange", keepAlive);
+
+    return () => {
+      audio.removeEventListener("pause", keepAlive);
+      document.removeEventListener("visibilitychange", keepAlive);
+      audio.pause();
+    };
+  }, []);
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let lastTime = performance.now();
+
+    const handleScroll = () => {
+      const audio = audioRef.current;
+      const now = performance.now();
+      const delta = Math.abs(window.scrollY - lastY);
+      const elapsed = Math.max(now - lastTime, 16);
+      const intensity = Math.min(delta / elapsed / 3, 1);
+
+      if (audio && musicStartedRef.current) {
+        audio.playbackRate = 0.96 + intensity * 0.22;
+        audio.volume = 0.36 + intensity * 0.18;
+      }
+
+      setMusicLevel(intensity);
+      window.clearTimeout(scrollPulseRef.current);
+      scrollPulseRef.current = window.setTimeout(() => {
+        if (audio && musicStartedRef.current) {
+          audio.playbackRate = 1;
+          audio.volume = 0.42;
+        }
+        setMusicLevel(musicStartedRef.current ? 0.35 : 0);
+      }, 180);
+
+      lastY = window.scrollY;
+      lastTime = now;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.clearTimeout(scrollPulseRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyEnter = () => {
+      enterPortfolio();
+    };
+
+    if (!hasEntered) {
+      window.addEventListener("keydown", handleKeyEnter);
+    }
+
+    return () => window.removeEventListener("keydown", handleKeyEnter);
+  }, [enterPortfolio, hasEntered]);
 
   const handleRouteClick = (route) => {
     const expected = routeSolution[routeStep];
@@ -453,7 +544,24 @@ export default function AuraPortfolio() {
 
   return (
     <main className="aura-site min-h-screen overflow-hidden">
+      <audio ref={audioRef} src="/aura-phonk.mp3" preload="auto" loop playsInline />
+      {!hasEntered && (
+        <button type="button" className="aura-enter-gate" onClick={enterPortfolio} aria-label="Enter Michael Owusu portfolio">
+          <Image src="/enter-aura.gif" alt="" fill priority sizes="100vw" className="object-cover" unoptimized />
+          <span className="enter-vignette" />
+          <span className="enter-copy">
+            <strong>Michael Owusu</strong>
+            <span>click or press any key</span>
+          </span>
+        </button>
+      )}
       <GameBackdrop />
+      <div className="sound-reactor" style={{ ["--beat"]: musicLevel }} aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
       <div className="scroll-game-hud" aria-hidden="true">
         <div className="scroll-track">
           <motion.div className="scroll-fill" style={{ scaleY: scrollYProgress }} />
@@ -766,7 +874,7 @@ export default function AuraPortfolio() {
                 <span className="edu-when">Expected May 2029</span>
               </div>
               <p className="mt-2 text-base font-bold text-ink-soft">
-                B.S. Computer Science · Minor in Mathematics · Second year · GPA 3.76 / 4.00 · Atlanta, GA
+                B.S. Computer Science · Minor in Mathematics · Second year · Atlanta, GA
               </p>
             </div>
             <div className="flex flex-wrap gap-4">
